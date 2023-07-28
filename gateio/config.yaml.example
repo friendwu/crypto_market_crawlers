@@ -1,4 +1,4 @@
 concurrencyLevel: 50
 biz: futures_usdt
-type: funding_applies
+type: funding_updates
 dataRoot: /root/data/gateio/
