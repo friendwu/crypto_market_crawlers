@@ -1,0 +1,5 @@
+concurrencyLevel: 50
+dataRoot: /root/data/binance/
+biz: futures_um
+metric: klines
+unit: 5m
