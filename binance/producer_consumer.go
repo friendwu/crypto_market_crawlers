@@ -20,7 +20,7 @@ type ProducerConsumer struct {
 	wg    sync.WaitGroup
 }
 
-func NewProducerConsumer(config *Config,
+func NewProducerConsumer(config *BinanceConfig,
 	initCallbackFunc IFunc,
 	producerCallbackFunc AFunc,
 	consumerCallbackFunc AFunc) *ProducerConsumer {

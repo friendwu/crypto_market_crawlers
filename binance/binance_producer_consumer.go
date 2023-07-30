@@ -59,7 +59,7 @@ var (
 
 // Document: https://www.binance.com/en/landing/data
 func binanceInitCallback(cfg interface{}) interface{} {
-	config := cfg.(*Config)
+	config := cfg.(*BinanceConfig)
 
 	if !slices.Contains(BIZS, config.Biz) || !slices.Contains(METRICS, config.Metric) {
 		log.Fatalf("invalid config")

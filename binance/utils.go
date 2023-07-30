@@ -48,7 +48,7 @@ func NewKvstore(path string) gokv.Store {
 	kvStore, err := file.NewStore(options)
 	if err != nil {
 		log.Errorf("failed to create kvstore %v", err)
-		return
+		return nil
 	}
 
 	return kvStore

@@ -5,9 +5,12 @@ import (
 )
 
 func main() {
-	config := initConfig()
+	config := BinanceConfig{}
+	initConfig(&config)
 
-	producerConsumer := NewProducerConsumer(config, binanceInitCallback, binanceProducerCallback, binanceConsumerCallback)
+	log.Infof("configs: %#v", config)
+
+	producerConsumer := NewProducerConsumer(&config, binanceInitCallback, binanceProducerCallback, binanceConsumerCallback)
 	producerConsumer.Run()
 
 	log.Info("all jobs finished")

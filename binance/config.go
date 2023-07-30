@@ -7,16 +7,16 @@ import (
 	"github.com/spf13/viper"
 )
 
-type Config struct {
+type BinanceConfig struct {
 	DataRoot         string `yaml:"dataRoot"`
 	ConcurrencyLevel int    `yaml:"concurrencyLevel"`
 	Biz              string `yaml:"biz"`
 	Metric           string `yaml:"metric"`
 	Interval         string `yaml:"interval"`
-	Granularity string `yaml:"granularity"`
+	Granularity      string `yaml:"granularity"`
 }
 
-func initConfig() *Config {
+func initConfig(config interface{}) {
 	if len(os.Args) != 2 {
 		log.Fatalf("Please provide a config file")
 	}
@@ -26,16 +26,11 @@ func initConfig() *Config {
 
 	err := viper.ReadInConfig()
 	if err != nil {
-		log.Errorf("failed to read config file %v", err)
+		log.Fatalf("failed to read config file %v", err)
 	}
 
-	var config Config
-	err = viper.Unmarshal(&config)
+	err = viper.Unmarshal(config)
 	if err != nil {
 		log.Fatalf("failed to unmarshal config file %v", err)
 	}
-
-	log.Infof("configs: %#v", config)
-
-	return &config
 }
