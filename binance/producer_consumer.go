@@ -20,19 +20,19 @@ type ProducerConsumer struct {
 	wg    sync.WaitGroup
 }
 
-func NewProducerConsumer(config *BinanceConfig,
+func NewProducerConsumer(concurrencyLevel int, config interface{},
 	initCallbackFunc IFunc,
 	producerCallbackFunc AFunc,
 	consumerCallbackFunc AFunc) *ProducerConsumer {
 	res := &ProducerConsumer{
-		concurrencyLevel:     config.ConcurrencyLevel,
+		concurrencyLevel:     concurrencyLevel,
 		initCallbackContext:  initCallbackFunc(config),
 		producerCallbackFunc: producerCallbackFunc,
 		consumerCallbackFunc: consumerCallbackFunc,
-		jobCh:                make(chan interface{}, config.ConcurrencyLevel),
+		jobCh:                make(chan interface{}, concurrencyLevel),
 	}
 
-	res.wg.Add(config.ConcurrencyLevel + 1)
+	res.wg.Add(concurrencyLevel + 1)
 
 	return res
 }

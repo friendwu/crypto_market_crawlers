@@ -17,10 +17,19 @@ import (
 	"github.com/philippgille/gokv"
 )
 
-type checkpoint struct {
+type BinanceCheckpoint struct {
 	LeftOpenDate   time.Time
 	RightCloseDate time.Time
 	LeftProbed     bool
+}
+
+type BinanceConfig struct {
+	DataRoot         string `yaml:"dataRoot"`
+	ConcurrencyLevel int    `yaml:"concurrencyLevel"`
+	Biz              string `yaml:"biz"`
+	Metric           string `yaml:"metric"`
+	Interval         string `yaml:"interval"`
+	Granularity      string `yaml:"granularity"`
 }
 
 type BinanceContext struct {
@@ -157,7 +166,7 @@ func binanceProducerCallback(c interface{}, jobCh chan interface{}) {
 	log.Infof("options: %#v", options)
 
 	for _, pair := range options.Data.SymbolList {
-		var cp checkpoint
+		var cp BinanceCheckpoint
 		found, err := context.kvStore.Get(pair, &cp)
 		if err != nil {
 			log.Errorf("failed to get checkpoint %v", err)
@@ -189,7 +198,7 @@ func consumeJob(context *BinanceContext, job string) {
 	log.Infof("start to execute job %s", job)
 
 	pair := job
-	var cp checkpoint
+	var cp BinanceCheckpoint
 	found, err := context.kvStore.Get(pair, &cp)
 	if err != nil {
 		log.Errorf("failed to get checkpoint %v", err)
