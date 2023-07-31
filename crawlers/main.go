@@ -2,8 +2,6 @@ package main
 
 import (
 	"flag"
-
-	"github.com/charmbracelet/log"
 )
 
 func main() {
@@ -16,6 +14,4 @@ func main() {
 	producerConsumer := NewProducerConsumer(*concurrencyLevel, spider)
 
 	producerConsumer.Run()
-
-	log.Info("all jobs finished")
 }

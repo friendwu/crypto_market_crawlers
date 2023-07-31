@@ -1,0 +1,6 @@
+concurrencyLevel: 50
+dataRoot: /root/data/binance/
+biz: futures_um
+metric: fundingRate
+interval: daily
+granularity: 5m

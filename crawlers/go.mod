@@ -1,4 +1,4 @@
-module github.com/friendwu/crypto_market_crawlers/binance
+module github.com/friendwu/crypto_market_crawlers/crawlers
 
 go 1.20
 
