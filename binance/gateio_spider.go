@@ -29,7 +29,7 @@ type GateioCheckpoint struct {
 	LeftProbed     bool
 }
 
-type GateioContext struct {
+type GateioSpider struct {
 	kvStore  gokv.Store
 	dataPath string
 	biz      string
@@ -52,8 +52,10 @@ type gateioPairs struct {
 	Liquidity []gateioPair `json:"liquidity"`
 }
 
-func gateioInitCallback(cfg interface{}) interface{} {
-	config := cfg.(*GateioConfig)
+func NewGateioSpider(configFile string) Spider {
+	config := &GateioConfig{}
+
+	initConfig(configFile, config)
 
 	if config.DataRoot == "" || config.ConcurrencyLevel == 0 || config.Biz == "" || config.Typ == "" {
 		log.Fatalf("invalid config")
@@ -70,7 +72,7 @@ func gateioInitCallback(cfg interface{}) interface{} {
 		log.Fatalf("failed to create directory %s, %v", dataPath, err)
 	}
 
-	return &GateioContext{
+	return &GateioSpider{
 		kvStore:  NewKvstore(kvstorePath),
 		biz:      config.Biz,
 		typ:      config.Typ,
@@ -78,9 +80,7 @@ func gateioInitCallback(cfg interface{}) interface{} {
 	}
 }
 
-func gateioProducerCallback(c interface{}, jobCh chan interface{}) {
-	context := c.(*GateioContext)
-
+func (s *GateioSpider) ProducerCallback(jobCh chan interface{}) {
 	url := "https://www.gate.io/json_svr/query?u=23"
 	method := "POST"
 
@@ -112,15 +112,15 @@ func gateioProducerCallback(c interface{}, jobCh chan interface{}) {
 	//log.Warnf("response body: %d, %d, %d\n", resp.StatusCode, len(body), len(pairs.Spot))
 
 	var p []gateioPair
-	if context.biz == "spot" {
+	if s.biz == "spot" {
 		p = pairs.Spot
-	} else if context.biz == "futures_usdt" {
+	} else if s.biz == "futures_usdt" {
 		p = pairs.Contract
 	}
 
 	for _, pair := range p {
 		var cp GateioCheckpoint
-		found, err := context.kvStore.Get(pair.Pair, &cp)
+		found, err := s.kvStore.Get(pair.Pair, &cp)
 		if err != nil {
 			log.Errorf("failed to get checkpoint %v", err)
 			continue
@@ -141,21 +141,19 @@ func gateioProducerCallback(c interface{}, jobCh chan interface{}) {
 
 	return
 }
-
-func gateioConsumerCallback(context interface{}, jobCh chan interface{}) {
-	c := context.(*GateioContext)
+func (s *GateioSpider) ConsumerCallback(jobCh chan interface{}) {
 	for job := range jobCh {
-		gateioConsumeJob(c, job.(string))
+		s.consumeJob(job.(string))
 	}
 }
 
-func gateioConsumeJob(context *GateioContext, pair string) {
+func (s *GateioSpider) consumeJob(pair string) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	log.Infof("start to execute job %s", pair)
 
 	var cp BinanceCheckpoint
-	found, err := context.kvStore.Get(pair, &cp)
+	found, err := s.kvStore.Get(pair, &cp)
 	if err != nil {
 		log.Errorf("failed to get checkpoint %v", err)
 		return
@@ -177,8 +175,8 @@ func gateioConsumeJob(context *GateioContext, pair string) {
 		date := m.Format("200601")
 
 		//url := "https://download.gatedata.org/spot/candlesticks_1m/202304/LUNA_ETH-202304.csv.gz"
-		url := fmt.Sprintf("https://download.gatedata.org/%s/%s/%s/%s-%s.csv.gz", context.biz, context.typ, date, pair, date)
-		path := filepath.Join(context.dataPath, fmt.Sprintf("%s-%s.csv.gz", pair, date))
+		url := fmt.Sprintf("https://download.gatedata.org/%s/%s/%s/%s-%s.csv.gz", s.biz, s.typ, date, pair, date)
+		path := filepath.Join(s.dataPath, fmt.Sprintf("%s-%s.csv.gz", pair, date))
 
 		notFound, err := DownloadFile(client, url, path)
 		if err != nil {
@@ -191,7 +189,7 @@ func gateioConsumeJob(context *GateioContext, pair string) {
 
 		if notFound {
 			cp.LeftProbed = true
-			context.kvStore.Set(pair, cp)
+			s.kvStore.Set(pair, cp)
 
 			break
 		}
@@ -199,6 +197,6 @@ func gateioConsumeJob(context *GateioContext, pair string) {
 		log.Infof("downloaded file %s", url)
 
 		cp.LeftOpenDate = m.AddDate(0, -1, 0)
-		context.kvStore.Set(pair, cp)
+		s.kvStore.Set(pair, cp)
 	}
 }

@@ -32,7 +32,7 @@ type BinanceConfig struct {
 	Granularity      string `yaml:"granularity"`
 }
 
-type BinanceContext struct {
+type BinanceSpider struct {
 	kvStore  gokv.Store
 	dataPath string
 
@@ -66,9 +66,11 @@ var (
 	}
 )
 
-// Document: https://www.binance.com/en/landing/data
-func binanceInitCallback(cfg interface{}) interface{} {
-	config := cfg.(*BinanceConfig)
+func NewBinanceSpider(configFile string) Spider {
+	// Document: https://www.binance.com/en/landing/data
+
+	var config BinanceConfig
+	initConfig(configFile, &config)
 
 	if !slices.Contains(BIZS, config.Biz) || !slices.Contains(METRICS, config.Metric) {
 		log.Fatalf("invalid config")
@@ -87,7 +89,7 @@ func binanceInitCallback(cfg interface{}) interface{} {
 		log.Fatalf("failed to create directory %s, %v", dataPath, err)
 	}
 
-	res := &BinanceContext{
+	return &BinanceSpider{
 		kvStore:     NewKvstore(kvstorePath),
 		biz:         config.Biz,
 		metric:      config.Metric,
@@ -95,12 +97,9 @@ func binanceInitCallback(cfg interface{}) interface{} {
 		interval:    config.Interval,
 		dataPath:    dataPath,
 	}
-
-	return res
 }
 
-func binanceProducerCallback(c interface{}, jobCh chan interface{}) {
-	context := c.(*BinanceContext)
+func (s *BinanceSpider) ProducerCallback(jobCh chan interface{}) {
 	url := "https://www.binance.com/bapi/bigdata/v1/public/bigdata/finance/exchange/listDownloadOptions"
 
 	type Payload struct {
@@ -123,8 +122,8 @@ func binanceProducerCallback(c interface{}, jobCh chan interface{}) {
 	}
 
 	data := Payload{
-		Biz:       strings.ToUpper(context.biz),
-		ProductID: metric2ProductIdMap[context.metric],
+		Biz:       strings.ToUpper(s.biz),
+		ProductID: metric2ProductIdMap[s.metric],
 	}
 	payloadBytes, err := json.Marshal(data)
 	if err != nil {
@@ -167,7 +166,7 @@ func binanceProducerCallback(c interface{}, jobCh chan interface{}) {
 
 	for _, pair := range options.Data.SymbolList {
 		var cp BinanceCheckpoint
-		found, err := context.kvStore.Get(pair, &cp)
+		found, err := s.kvStore.Get(pair, &cp)
 		if err != nil {
 			log.Errorf("failed to get checkpoint %v", err)
 			continue
@@ -185,21 +184,20 @@ func binanceProducerCallback(c interface{}, jobCh chan interface{}) {
 	log.Errorf("All jobs sent")
 }
 
-func binanceConsumerCallback(context interface{}, jobCh chan interface{}) {
-	c := context.(*BinanceContext)
+func (s *BinanceSpider) ConsumerCallback(jobCh chan interface{}) {
 	for job := range jobCh {
-		consumeJob(c, job.(string))
+		s.consumeJob(job.(string))
 	}
 }
 
-func consumeJob(context *BinanceContext, job string) {
+func (s *BinanceSpider) consumeJob(job string) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	log.Infof("start to execute job %s", job)
 
 	pair := job
 	var cp BinanceCheckpoint
-	found, err := context.kvStore.Get(pair, &cp)
+	found, err := s.kvStore.Get(pair, &cp)
 	if err != nil {
 		log.Errorf("failed to get checkpoint %v", err)
 		return
@@ -219,7 +217,7 @@ func consumeJob(context *BinanceContext, job string) {
 	for {
 		m := cp.LeftOpenDate
 		var date string
-		switch context.interval {
+		switch s.interval {
 		case INTERVAL_MONTHLY:
 			date = m.Format("2006-01")
 		case INTERVAL_DAILY:
@@ -233,27 +231,27 @@ func consumeJob(context *BinanceContext, job string) {
 		//https://data.binance.vision/data/futures/um/monthly/fundingRate/ATOMUSDT/ATOMUSDT-fundingRate-2023-06.zip
 
 		//https://data.binance.vision/data/futures/um/monthly/metrics/XVGUSDT/XVGUSDT-metrics-2023-06.zip
-		switch context.metric {
+		switch s.metric {
 		case METRIC_KLINES:
-			fileName = fmt.Sprintf("%s-%s-%s.zip", pair, context.granularity, date)
+			fileName = fmt.Sprintf("%s-%s-%s.zip", pair, s.granularity, date)
 		default:
-			fileName = fmt.Sprintf("%s-%s-%s.zip", pair, context.metric, date)
+			fileName = fmt.Sprintf("%s-%s-%s.zip", pair, s.metric, date)
 		}
-		path := filepath.Join(context.dataPath, fileName)
+		path := filepath.Join(s.dataPath, fileName)
 
 		//hardcode url component futures_um --> futures/um
-		biz := context.biz
-		if context.biz == BIZ_FUTURES_UM {
+		biz := s.biz
+		if s.biz == BIZ_FUTURES_UM {
 			biz = "futures/um"
 		}
 
 		//https://data.binance.vision/data/futures/um/daily/klines/ARBUSDT/5m/ARBUSDT-5m-2023-07-28.zip
 		var url string
-		switch context.metric {
+		switch s.metric {
 		case METRIC_KLINES:
-			url = fmt.Sprintf("https://data.binance.vision/data/%s/%s/%s/%s/%s/%s", biz, context.interval, context.metric, pair, context.granularity, fileName)
+			url = fmt.Sprintf("https://data.binance.vision/data/%s/%s/%s/%s/%s/%s", biz, s.interval, s.metric, pair, s.granularity, fileName)
 		default:
-			url = fmt.Sprintf("https://data.binance.vision/data/%s/%s/%s/%s/%s", biz, context.interval, context.metric, pair, fileName)
+			url = fmt.Sprintf("https://data.binance.vision/data/%s/%s/%s/%s/%s", biz, s.interval, s.metric, pair, fileName)
 		}
 
 		notFound, err := DownloadFile(client, url, path)
@@ -269,20 +267,20 @@ func consumeJob(context *BinanceContext, job string) {
 			log.Warnf("file %s not found", url)
 
 			cp.LeftProbed = true
-			context.kvStore.Set(pair, cp)
+			s.kvStore.Set(pair, cp)
 
 			break
 		}
 
 		log.Infof("downloaded file %s", url)
 
-		switch context.interval {
+		switch s.interval {
 		case INTERVAL_MONTHLY:
 			cp.LeftOpenDate = m.AddDate(0, -1, 0)
 		case INTERVAL_DAILY:
 			cp.LeftOpenDate = m.AddDate(0, 0, -1)
 		}
 
-		context.kvStore.Set(pair, cp)
+		s.kvStore.Set(pair, cp)
 	}
 }
