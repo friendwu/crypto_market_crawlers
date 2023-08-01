@@ -66,9 +66,8 @@ var (
 	}
 )
 
+// Document: https://www.binance.com/en/landing/data
 func NewBinanceSpider(configFile string) Spider {
-	// Document: https://www.binance.com/en/landing/data
-
 	var config BinanceConfig
 	initConfig(configFile, &config)
 

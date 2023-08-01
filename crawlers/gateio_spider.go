@@ -52,6 +52,7 @@ type gateioPairs struct {
 	Liquidity []gateioPair `json:"liquidity"`
 }
 
+// Document: https://www.gate.io/zh/developer/historical_quotes
 func NewGateioSpider(configFile string) Spider {
 	config := &GateioConfig{}
 
