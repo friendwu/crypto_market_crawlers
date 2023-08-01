@@ -5,6 +5,7 @@ import logging
 import click
 from gecko import *
 from binance import *
+from gateio import *
 
 
 logging.basicConfig(
@@ -15,23 +16,23 @@ logging.basicConfig(
 
 log = logging.getLogger(__name__)
 
+pipelines = {
+    "gecko_market": GeckoMarketItemPipeline,
+    "binance_future_um_funding_rates": BinanceUmFundingRateItemPipeline,
+    "binance_future_um_metrics": BinanceUmMetricsItemPipeline,
+    "gateio_um_funding_applies": GateioUmFundingAppliesItemPipeline,
+}
+
 
 def new_item_pipeline(name, pg_url):
-    if name == "gecko_market":
-        return GeckoMarketItemPipeline(pg_url)
-    elif name == "binance_future_um_funding_rates":
-        return BinanceUmFundingRateItemPipeline(pg_url)
-    elif name == "binance_future_um_metrics":
-        return BinanceUmMetricsItemPipeline(pg_url)
-    else:
-        return None
+    return pipelines[name](pg_url)
 
 
 @click.command()
 @click.option(
     "--pipeline",
     type=click.Choice(
-        ["gecko_market", "binance_future_um_funding_rates", "binance_future_um_metrics"]
+        pipelines.keys(),
     ),
     prompt="pipeline",
     help="Enter the pipeline name",
@@ -50,8 +51,8 @@ def watch(pipeline, data_path, dup_path, pg_url):
     )
     observer.schedule(event_handler, data_path, recursive=True)
     event_handler.process_existing_files(data_path)
-
     observer.start()
+
     try:
         while True:
             time.sleep(1)
