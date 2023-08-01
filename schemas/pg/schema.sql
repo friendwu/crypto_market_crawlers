@@ -60,3 +60,13 @@ CREATE TABLE IF NOT EXISTS blockchain_overview.binance_um_metrics (
 
     PRIMARY KEY (symbol, create_time)
 );
+
+CREATE TABLE IF NOT EXISTS blockchain_overview.gateio_um_funding_applies (
+    id BIGSERIAL NOT NULL,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    datetime TIMESTAMPTZ NOT NULL,
+    funding_rate NUMERIC,
+
+    PRIMARY KEY (symbol, datetime)
+);
