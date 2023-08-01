@@ -3,7 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,14 +13,25 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/philippgille/gokv"
-	//"golang.org/x/exp/slices"
+	"golang.org/x/exp/slices"
+)
+
+var (
+	GATEIO_BIZ_SPOT       = "spot"
+	GATEIO_BIZ_FUTURES_UM = "futures_usdt"
+
+	TYPE_CANDLESTICKS_5M = "candlesticks_5m"
+	TYPE_FUNDING_UPDATES = "funding_updates"
+	TYPE_FUNDING_APPLIES = "funding_applies"
+
+	GATEIO_BIZS  = []string{GATEIO_BIZ_SPOT, GATEIO_BIZ_FUTURES_UM}
+	GATEIO_TYPES = []string{TYPE_CANDLESTICKS_5M, TYPE_FUNDING_UPDATES, TYPE_FUNDING_APPLIES}
 )
 
 type GateioConfig struct {
-	DataRoot         string `yaml:"dataRoot"`
-	ConcurrencyLevel int    `yaml:"concurrencyLevel"`
-	Biz              string `yaml:"biz"`
-	Typ              string `yaml:"type"`
+	DataRoot string `yaml:"dataRoot"`
+	Biz      string `yaml:"biz"`
+	Type     string `yaml:"type"`
 }
 
 type GateioCheckpoint struct {
@@ -58,15 +69,15 @@ func NewGateioSpider(configFile string) Spider {
 
 	initConfig(configFile, config)
 
-	if config.DataRoot == "" || config.ConcurrencyLevel == 0 || config.Biz == "" || config.Typ == "" {
-		log.Fatalf("invalid config")
+	if config.DataRoot == "" {
+		log.Fatalf("invalid data root config")
 	}
 
-	// if !slices.Contains(BIZS, config.Biz) || !slices.Contains(TYPES, config.Typ) {
-	// 	log.Fatalf("invalid config")
-	// }
+	if !slices.Contains(GATEIO_BIZS, config.Biz) || !slices.Contains(GATEIO_TYPES, config.Type) {
+		log.Fatalf("invalid config %#v", config)
+	}
 
-	dataPath := filepath.Join(config.DataRoot, config.Biz+"_"+config.Typ)
+	dataPath := filepath.Join(config.DataRoot, config.Biz+"_"+config.Type)
 	kvstorePath := filepath.Join(dataPath, "gokv")
 
 	if err := os.MkdirAll(dataPath, os.ModePerm); err != nil {
@@ -76,7 +87,7 @@ func NewGateioSpider(configFile string) Spider {
 	return &GateioSpider{
 		kvStore:  NewKvstore(kvstorePath),
 		biz:      config.Biz,
-		typ:      config.Typ,
+		typ:      config.Type,
 		dataPath: dataPath,
 	}
 }
@@ -102,7 +113,7 @@ func (s *GateioSpider) ProducerCallback(jobCh chan interface{}) {
 
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return
 	}
@@ -137,10 +148,6 @@ func (s *GateioSpider) ProducerCallback(jobCh chan interface{}) {
 	}
 
 	log.Errorf("All jobs sent")
-
-	close(jobCh)
-
-	return
 }
 func (s *GateioSpider) ConsumerCallback(jobCh chan interface{}) {
 	for job := range jobCh {
@@ -153,7 +160,7 @@ func (s *GateioSpider) consumeJob(pair string) {
 
 	log.Infof("start to execute job %s", pair)
 
-	var cp BinanceCheckpoint
+	var cp GateioCheckpoint
 	found, err := s.kvStore.Get(pair, &cp)
 	if err != nil {
 		log.Errorf("failed to get checkpoint %v", err)

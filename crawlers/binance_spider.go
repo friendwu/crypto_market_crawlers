@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -24,12 +24,11 @@ type BinanceCheckpoint struct {
 }
 
 type BinanceConfig struct {
-	DataRoot         string `yaml:"dataRoot"`
-	ConcurrencyLevel int    `yaml:"concurrencyLevel"`
-	Biz              string `yaml:"biz"`
-	Metric           string `yaml:"metric"`
-	Interval         string `yaml:"interval"`
-	Granularity      string `yaml:"granularity"`
+	DataRoot    string `yaml:"dataRoot"`
+	Biz         string `yaml:"biz"`
+	Metric      string `yaml:"metric"`
+	Interval    string `yaml:"interval"`
+	Granularity string `yaml:"granularity"`
 }
 
 type BinanceSpider struct {
@@ -151,7 +150,7 @@ func (s *BinanceSpider) ProducerCallback(jobCh chan interface{}) {
 
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		log.Error("failed to read response body", err)
 

@@ -1,0 +1,3 @@
+dataRoot: /root/data/gateio/
+biz: futures_usdt
+type: funding_applies  

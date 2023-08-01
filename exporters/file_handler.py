@@ -1,6 +1,7 @@
 import logging
 import os
 from watchdog.events import FileSystemEventHandler
+import concurrent.futures
 
 log = logging.getLogger(__name__)
 
@@ -64,5 +65,17 @@ class FileHandler(FileSystemEventHandler):
 
     def process_existing_files(self, directory):
         for foldername, subfolders, filenames in os.walk(directory):
+            with concurrent.futures.ProcessPoolExecutor(max_workers=5) as executor:
+                executor.map(self.__process_files, split(filenames, 5))
+
             for filename in filenames:
                 self.__process_file(os.path.join(foldername, filename))
+
+    def __process_files(self, file_paths):
+        for file_path in file_paths:
+            self.__process_file(file_path)
+
+
+def split(a, n):
+    k, m = divmod(len(a), n)
+    return (a[i * k + min(i, m) : (i + 1) * k + min(i + 1, m)] for i in range(n))
