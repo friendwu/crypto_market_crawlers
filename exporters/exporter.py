@@ -21,6 +21,8 @@ pipelines = {
     "binance_future_um_funding_rates": BinanceUmFundingRateItemPipeline,
     "binance_future_um_metrics": BinanceUmMetricsItemPipeline,
     "gateio_um_funding_applies": GateioUmFundingAppliesItemPipeline,
+    "gateio_um_funding_updates": GateioUmFundingUpdatesItemPipeline,
+    "gateio_spot_candlesticks_5m": GateioSpotCandlesticks5MItemPipeline,
 }
 
 

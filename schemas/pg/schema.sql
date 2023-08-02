@@ -70,3 +70,33 @@ CREATE TABLE IF NOT EXISTS blockchain_overview.gateio_um_funding_applies (
 
     PRIMARY KEY (symbol, datetime)
 );
+
+
+CREATE TABLE IF NOT EXISTS blockchain_overview.gateio_um_funding_updates (
+    id BIGSERIAL NOT NULL,
+    timestamp BIGINT NOT NULL,
+    symbol VARCHAR(50),
+    datetime TIMESTAMPTZ,
+    funding_rate NUMERIC,
+    interest_rate NUMERIC,
+    bid_diff NUMERIC,
+    ask_diff NUMERIC,
+    mark_price NUMERIC,
+    index_price NUMERIC,
+    update_count INT,
+    PRIMARY KEY (symbol, datetime)
+);
+
+CREATE TABLE IF NOT EXISTS blockchain_overview.gateio_spot_candlesticks_5m (
+    id BIGSERIAL NOT NULL,
+    symbol TEXT NOT NULL,
+    timestamp BIGINT NOT NULL,
+    datetime TIMESTAMPTZ NOT NULL,
+    open NUMERIC,
+    high NUMERIC,
+    low NUMERIC,
+    close NUMERIC,
+    volume NUMERIC,
+    PRIMARY KEY (symbol, datetime)
+);
+
