@@ -2,6 +2,7 @@ import logging
 import os
 from watchdog.events import FileSystemEventHandler
 import concurrent.futures
+from loky import get_reusable_executor
 
 log = logging.getLogger(__name__)
 
@@ -41,8 +42,9 @@ class FileHandler(FileSystemEventHandler):
         self.dup_filter = DupeFilter(dup_path)
 
     def __process_file(self, file_path):
+        print(file_path)
         if not self.item_pipeline.is_valid_file(file_path):
-            log.debug("invalid file: %s", file_path)
+            log.warn("invalid file: %s", file_path)
             return
 
         if self.dup_filter.duplicate(file_path):
@@ -65,11 +67,21 @@ class FileHandler(FileSystemEventHandler):
 
     def process_existing_files(self, directory):
         for foldername, subfolders, filenames in os.walk(directory):
-            with concurrent.futures.ProcessPoolExecutor(max_workers=5) as executor:
-                executor.map(self.__process_files, split(filenames, 5))
-
+            # executor = get_reusable_executor(max_workers=10)
+            filenames2 = []
             for filename in filenames:
-                self.__process_file(os.path.join(foldername, filename))
+                filenames2.append(os.path.join(foldername, filename))
+
+            with concurrent.futures.ThreadPoolExecutor(20) as executor:
+                executor.map(self.__process_file, filenames2)
+            # results = executor.map(self.__process_file, filenames, chunksize=5)
+            # print(len(set(results)))
+
+            # executor.shutdown(wait=True)
+
+
+            # for filename in filenames:
+            #    self.__process_file(os.path.join(foldername, filename))
 
     def __process_files(self, file_paths):
         for file_path in file_paths:

@@ -100,3 +100,12 @@ CREATE TABLE IF NOT EXISTS blockchain_overview.gateio_spot_candlesticks_5m (
     PRIMARY KEY (symbol, datetime)
 );
 
+CREATE TABLE IF NOT EXISTS blockchain_overview.exchange_coins (
+    id BIGSERIAL NOT NULL,
+    symbol TEXT NOT NULL, -- BTC / ETH / ...... / etc
+    gecko_id TEXT NOT NULL, -- bitcoin / ethereum / ...... / etc
+    exists_in_binance BOOLEAN NOT NULL,
+    exists_in_gateio BOOLEAN NOT NULL,
+
+    PRIMARY KEY (gecko_id, symbol)
+);
