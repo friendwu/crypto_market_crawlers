@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/rand"
 	"net"
 	"net/http"
@@ -56,6 +57,19 @@ type GeckoSpider struct {
 	coinListPath string	
 }
 
+// type GeckoMarket struct {
+// 	gorm.Model
+
+// 	GeckoId      string    `gorm:"column:gecko_id;primaryKey"`
+// 	Symbol       string    `gorm:"column:symbol"`
+// 	Name         string    `gorm:"column:name"`
+// 	Timestamp    int64     `gorm:"column:timestamp;primaryKey"`
+// 	DateTime     time.Time `gorm:"column:datetime"`
+// 	PriceUsd     float64   `gorm:"column:price_usd"`
+// 	MarketCapUsd float64   `gorm:"column:market_cap_usd"`
+// 	Volume24hUsd float64   `gorm:"column:volume_24h_usd"`
+// }
+
 type GeckoMarket struct {
 	gorm.Model
 
@@ -64,9 +78,9 @@ type GeckoMarket struct {
 	Name         string    `gorm:"column:name"`
 	Timestamp    int64     `gorm:"column:timestamp;primaryKey"`
 	DateTime     time.Time `gorm:"column:datetime"`
-	PriceUsd     float64   `gorm:"column:price_usd"`
-	MarketCapUsd float64   `gorm:"column:market_cap_usd"`
-	Volume24hUsd float64   `gorm:"column:volume_24h_usd"`
+	Price     float64   `gorm:"column:price"`
+	MarketCap float64   `gorm:"column:market_cap"`
+	Volume24h float64   `gorm:"column:volume_24h"`
 }
 
 func NewGeckoSpider(configFile string) *GeckoSpider {
@@ -160,27 +174,45 @@ func (s *GeckoSpider) ConsumerCallback(jobCh chan interface{}) {
 	// cgClient := coingecko.NewClient(&http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl), DisableKeepAlives: true}})
 	cgClient := coingecko.NewClient(&http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}})
 
-	for coin := range jobCh {
-		s.syncCoinHistory(coin.(coingecko_types.CoinsListItem), cgClient)
+	for c := range jobCh {
+		coin := c.(coingecko_types.CoinsListItem)
+		cp := &checkpoint{}
+		found, err := s.batchKvStore.Get(coin.ID, cp)
+		if err != nil {
+			log.Errorf("failed to get checkpoint of %v, %v", coin, err)
+			return
+		}
+
+		if found && !cp.LeftDate.IsZero() && !cp.RightDate.IsZero() {
+			continue //already synced
+		}
+
+		s.syncCoinHistory(coin, cgClient, "usd", "max")
+		s.syncCoinHistory(coin, cgClient, "btc", "max")
+
+		//cp.LeftDate = time.Unix(int64((*(*coinMarkets).Prices)[0][0]/1000), 0)
+		//cp.RightDate = time.Unix(int64((*(*coinMarkets).Prices)[len(*(*coinMarkets).Prices)-1][0]/1000), 0)
+		//TODO: FIXME
+		cp.LeftDate = time.Now()
+		cp.RightDate = time.Now()
+
+		err = s.batchKvStore.Set(coin.ID, cp)
+
+		if err != nil {
+			log.Errorf("failed to update checkpoint of %v, %v", coin, err)
+			continue
+		}
+
+		log.Infof("synced coin history of %v", coin)
 	}
 }
 
-func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, cgClient *coingecko.Client) {
-	cp := &checkpoint{}
-	found, err := s.batchKvStore.Get(coin.ID, cp)
-	if err != nil {
-		log.Errorf("failed to get checkpoint of %v, %v", coin, err)
-		return
-	}
-
-	if found && !cp.LeftDate.IsZero() && !cp.RightDate.IsZero() {
-		return //already synced
-	}
-
+func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, 
+	cgClient *coingecko.Client, vs_currency string, days string) {
 	retryDuration := 61 * time.Second
 
 	for {
-		coinMarkets, err := cgClient.CoinsIDMarketChart(coin.ID, "usd", "max")
+		coinMarkets, err := cgClient.CoinsIDMarketChart(coin.ID, vs_currency, days)
 
 		if err != nil {
 			if err1, ok := err.(net.Error); ok && err1.Timeout() {
@@ -214,33 +246,21 @@ func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, cgClie
 				Name:         coin.Name,
 				Timestamp:    int64((*(*coinMarkets).Prices)[i][0]),
 				DateTime:     time.Unix(int64((*(*coinMarkets).Prices)[i][0]/1000), 0),
-				PriceUsd:     float64((*(*coinMarkets).Prices)[i][1]),
-				MarketCapUsd: float64((*(*coinMarkets).MarketCaps)[i][1]),
-				Volume24hUsd: float64((*(*coinMarkets).TotalVolumes)[i][1]),
+				Price:     float64((*(*coinMarkets).Prices)[i][1]),
+				MarketCap: float64((*(*coinMarkets).MarketCaps)[i][1]),
+				Volume24h: float64((*(*coinMarkets).TotalVolumes)[i][1]),
 			}
 
 			// Upsert
-			result := s.db.Table("blockchain_overview.gecko_markets").Clauses(clause.OnConflict{
+			result := s.db.Table(fmt.Sprintf("blockchain_overview.gecko_markets_%s", vs_currency)).Clauses(clause.OnConflict{
 				Columns:   []clause.Column{{Name: "gecko_id"}, {Name: "timestamp"}},                            // Use the "id" column to determine if a record exists
-				DoUpdates: clause.AssignmentColumns([]string{"price_usd", "market_cap_usd", "volume_24h_usd"}), // If a record exists, update the "name" and "age_x" fields
+				DoUpdates: clause.AssignmentColumns([]string{"price", "market_cap", "volume_24h"}), // If a record exists, update the "name" and "age_x" fields
 			}).Create(&item)
 
 			if result.Error != nil {
 				log.Fatalf("Failed to upsert %v, %v", coin, result.Error)
 			}
 		}
-
-		cp.LeftDate = time.Unix(int64((*(*coinMarkets).Prices)[0][0]/1000), 0)
-		cp.RightDate = time.Unix(int64((*(*coinMarkets).Prices)[len(*(*coinMarkets).Prices)-1][0]/1000), 0)
-
-		err = s.batchKvStore.Set(coin.ID, cp)
-
-		if err != nil {
-			log.Errorf("failed to update checkpoint of %v, %v", coin, err)
-			return
-		}
-
-		log.Infof("synced coin history of %v", coin)
 
 		break
 	}
