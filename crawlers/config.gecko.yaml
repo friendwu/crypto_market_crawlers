@@ -1,0 +1,3 @@
+concurrencyLevel: 50
+dataRoot: /root/data/gecko/
+dsn: "host=127.0.0.1 port=5432 user=postgres password=svEwrp/ofET-LNqv dbname=superset sslmode=disable"

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,24 +23,37 @@ import (
 	coingecko_types "github.com/superoo7/go-gecko/v3/types"
 )
 
+var (
+	TASK_STATUS_DONE = "done"
+	TASK_STATUS_DOING = "doing"
+	TASK_STATUS_KEY = "task_status"
+)
+
 type checkpoint struct {
 	LeftDate  time.Time
 	RightDate time.Time
 }
 
+type taskStatus struct {
+	Batch int 
+	startTime time.Time	
+	endTime   time.Time
+
+	Status string // "doing", "done"
+}
+
 type GeckoConfig struct {
 	DSN string `yaml:"dsn"`
-	//KVStorePath   string `yaml:"kvstore_path"`
 	DataRoot     string `yaml:"data_root"`
-	CoinListPath string `yaml:"coin_list_path"`
 }
 
 type GeckoSpider struct {
 	cgClient     *coingecko.Client
-	kvStore      gokv.Store
+	statusKvStore      gokv.Store
+	batchKvStore      gokv.Store
 	db           *gorm.DB
-	coinListPath string
 	dataPath     string
+	coinListPath string	
 }
 
 type GeckoMarket struct {
@@ -61,57 +75,101 @@ func NewGeckoSpider(configFile string) *GeckoSpider {
 
 	db, err := gorm.Open(postgres.Open(config.DSN), &gorm.Config{})
 	if err != nil {
-		log.Fatal("failed to connect database", err)
+		log.Fatalf("failed to connect database: %#v", err)
 	}
 
-	proxyUrl, _ := url.Parse("http://192.168.100.1:8443")
+	proxyUrl, _ := url.Parse("http://127.0.0.1:8443")
 	cgClient := coingecko.NewClient(&http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}})
 	kvstorePath := filepath.Join(config.DataRoot, "gokv")
 	dataPath := filepath.Join(config.DataRoot, "coin_history")
+	coinListPath := filepath.Join(config.DataRoot, "coins.json")
 
-	kvStore := NewKvstore(kvstorePath)
+	statusKvStore := NewKvstore(kvstorePath)
+	ts := &taskStatus{}
+	found, err := statusKvStore.Get(TASK_STATUS_KEY, ts)
+	if err!= nil {
+		log.Fatalf("failed to get checkpoint in kvstore: %#v", err)
+	}
+
+	if !found {
+		ts.Batch = 0
+		ts.Status = TASK_STATUS_DOING
+		ts.startTime = time.Now()
+	} 
+	
+	if ts.Status == TASK_STATUS_DONE {
+		ts.Batch = ts.Batch + 1
+		ts.Status = TASK_STATUS_DOING
+		ts.startTime = time.Now()
+		ts.endTime = time.Time{}
+	}
+
+	err = statusKvStore.Set(TASK_STATUS_KEY, ts)
+	if err!= nil {
+		log.Fatalf("failed to set checkpoint in kvstore: %#v", err)
+	}
+
+	batchKvStore := NewKvstore(filepath.Join(kvstorePath, "batches", strconv.Itoa(ts.Batch)))
+	
 	return &GeckoSpider{
 		db:       db,
 		cgClient: cgClient,
-		kvStore:  kvStore,
+		statusKvStore: statusKvStore,
+		batchKvStore:  batchKvStore,
 		dataPath: dataPath,
+		coinListPath: coinListPath,
 	}
 }
 
 func (s *GeckoSpider) ProducerCallback(jobCh chan interface{}) {
 	coins, err := s.cgClient.CoinsList()
 	if err != nil {
-		log.Fatal("failed to get coin list in producer", err)
+		log.Fatalf("failed to get coin list in producer, %v", err)
 	}
 
 	r, _ := json.Marshal(coins)
 	if err = os.WriteFile(s.coinListPath, r, 0644); err != nil {
-		log.Error("failed to write coin list", err)
+		log.Error("failed to write coin list, %v", err)
 	}
 
 	for _, coin := range *coins {
 		path := filepath.Join(s.dataPath, coin.ID)
 		if err := os.MkdirAll(path, os.ModePerm); err != nil {
-			log.Error("failed to create directory", path, err)
+			log.Errorf("failed to create directory, %s, %v", path, err)
 		}
 
 		jobCh <- coin
 	}
 
+	ts := &taskStatus{}
+	found, err := s.statusKvStore.Get(TASK_STATUS_KEY, ts)
+	if err != nil || !found {
+		log.Fatalf("failed to get task status, found: %v, %v", found, err)
+		return 
+	}
+
+	ts.Status = TASK_STATUS_DONE
+	ts.endTime = time.Now()
+	s.statusKvStore.Set(TASK_STATUS_KEY, ts)
+
 	log.Info("all coins sent")
 }
 
 func (s *GeckoSpider) ConsumerCallback(jobCh chan interface{}) {
+	proxyUrl, _ := url.Parse("http://127.0.0.1:8443")
+	// cgClient := coingecko.NewClient(&http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl), DisableKeepAlives: true}})
+	cgClient := coingecko.NewClient(&http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}})
+
 	for coin := range jobCh {
-		s.syncCoinHistory(coin.(coingecko_types.CoinsListItem), s.cgClient)
+		s.syncCoinHistory(coin.(coingecko_types.CoinsListItem), cgClient)
 	}
 }
 
 func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, cgClient *coingecko.Client) {
 	cp := &checkpoint{}
-	found, err := s.kvStore.Get(coin.ID, cp)
+	found, err := s.batchKvStore.Get(coin.ID, cp)
 	if err != nil {
-		log.Error("failed to get checkpoint of", coin, err)
+		log.Errorf("failed to get checkpoint of %v, %v", coin, err)
 		return
 	}
 
@@ -119,19 +177,19 @@ func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, cgClie
 		return //already synced
 	}
 
-	retryDuration := 30 * time.Second
+	retryDuration := 61 * time.Second
 
 	for {
 		coinMarkets, err := cgClient.CoinsIDMarketChart(coin.ID, "usd", "max")
 
 		if err != nil {
 			if err1, ok := err.(net.Error); ok && err1.Timeout() {
-				log.Warn("timeout ", err1)
+				log.Warnf("timeout %v", err1)
 			} else {
 				if strings.Contains(err.Error(), "429") {
-					log.Warn("too many requests, sleep ", retryDuration, ", ", coin, ", ", err)
+					log.Warnf("too many requests, sleep %v, %v, %v", retryDuration, coin, err)
 				} else {
-					log.Error("failed to get coin history of ", coin, ", ", err)
+					log.Errorf("failed to get coin history of %v, %v", coin, err)
 				}
 			}
 
@@ -145,7 +203,7 @@ func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, cgClie
 
 		// err = os.WriteFile(path, r, 0644)
 		// if err != nil {
-		// 	log.Error("failed to write coin history of", coin, err)
+		// 	log.Errorf("failed to write coin history of %v, %v", coin, err)
 		// 	return
 		// }
 
@@ -168,21 +226,21 @@ func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, cgClie
 			}).Create(&item)
 
 			if result.Error != nil {
-				log.Fatal("Failed to upsert ", coin, ", ", result.Error)
+				log.Fatalf("Failed to upsert %v, %v", coin, result.Error)
 			}
 		}
 
 		cp.LeftDate = time.Unix(int64((*(*coinMarkets).Prices)[0][0]/1000), 0)
 		cp.RightDate = time.Unix(int64((*(*coinMarkets).Prices)[len(*(*coinMarkets).Prices)-1][0]/1000), 0)
 
-		err = s.kvStore.Set(coin.ID, cp)
+		err = s.batchKvStore.Set(coin.ID, cp)
 
 		if err != nil {
-			log.Error("failed to update checkpoint of", coin, err)
+			log.Errorf("failed to update checkpoint of %v, %v", coin, err)
 			return
 		}
 
-		log.Info("synced coin history of ", coin)
+		log.Infof("synced coin history of %v", coin)
 
 		break
 	}

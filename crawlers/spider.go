@@ -11,6 +11,8 @@ func NewSpider(name string, configFile string) Spider {
 		return NewGateioSpider(configFile)
 	case "binance":
 		return NewBinanceSpider(configFile)
+	case "gecko":
+		return NewGeckoSpider(configFile)
 	default:
 		return nil
 	}

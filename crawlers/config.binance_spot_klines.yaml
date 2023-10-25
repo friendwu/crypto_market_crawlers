@@ -1,0 +1,6 @@
+concurrencyLevel: 50
+dataRoot: /root/data/binance/
+biz: spot
+metric: klines
+interval: daily
+granularity: 1h
