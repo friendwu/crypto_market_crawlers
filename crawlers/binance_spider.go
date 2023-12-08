@@ -17,6 +17,11 @@ import (
 	"github.com/philippgille/gokv"
 )
 
+var (
+	CrawlDirectionForward  = "forward"
+	CrawlDirectionBackward = "backward"
+)
+
 type BinanceCheckpoint struct {
 	LeftOpenDate   time.Time
 	RightCloseDate time.Time
@@ -80,7 +85,7 @@ func NewBinanceSpider(configFile string) Spider {
 		config.Interval = INTERVAL_MONTHLY
 	}
 
-	dataPath := filepath.Join(config.DataRoot, config.Biz+"_"+config.Metric, config.Interval)
+	dataPath := filepath.Join(config.DataRoot, config.Biz+"_"+config.Metric, config.Interval, config.Granularity)
 	kvstorePath := filepath.Join(dataPath, "gokv")
 
 	if err := os.MkdirAll(dataPath, os.ModePerm); err != nil {
@@ -163,16 +168,16 @@ func (s *BinanceSpider) ProducerCallback(jobCh chan interface{}) {
 	log.Infof("options: %#v", options)
 
 	for _, pair := range options.Data.SymbolList {
-		var cp BinanceCheckpoint
-		found, err := s.kvStore.Get(pair, &cp)
-		if err != nil {
-			log.Errorf("failed to get checkpoint %v", err)
-			continue
-		}
+		// var cp BinanceCheckpoint
+		// found, err := s.kvStore.Get(pair, &cp)
+		// if err != nil {
+		// 	log.Errorf("failed to get checkpoint %v", err)
+		// 	continue
+		// }
 
-		if found && cp.LeftProbed {
-			continue
-		}
+		// if found && cp.LeftProbed {
+		// 	continue
+		// }
 
 		jobCh <- pair
 
@@ -184,7 +189,9 @@ func (s *BinanceSpider) ProducerCallback(jobCh chan interface{}) {
 
 func (s *BinanceSpider) ConsumerCallback(jobCh chan interface{}) {
 	for job := range jobCh {
-		s.consumeJob(job.(string))
+		pair := job.(string)
+		s.consumeJob(pair, CrawlDirectionBackward)
+		s.consumeJob(pair, CrawlDirectionForward)
 	}
 }
 
@@ -192,10 +199,10 @@ func (s *BinanceSpider) EndCallback() {
 	log.Info("binance spider ended")
 }
 
-func (s *BinanceSpider) consumeJob(job string) {
+func (s *BinanceSpider) consumeJob(job string, direction string) {
 	client := &http.Client{Timeout: 30 * time.Second}
 
-	log.Infof("start to execute job %s", job)
+	log.Infof("start to execute job %s:%s", job, direction)
 
 	pair := job
 	var cp BinanceCheckpoint
@@ -206,18 +213,28 @@ func (s *BinanceSpider) consumeJob(job string) {
 	}
 
 	if !found {
+		if direction == CrawlDirectionForward {
+			log.Fatalf("you should crawle backward first")
+			return
+		}
+
 		cp.LeftOpenDate = time.Date(2023, 06, 30, 0, 0, 0, 0, time.UTC)
 		cp.RightCloseDate = cp.LeftOpenDate
 		cp.LeftProbed = false
 	}
 
-	if cp.LeftProbed {
-		// TODO then go forward.
+	if direction == CrawlDirectionBackward && cp.LeftProbed {
 		return
 	}
 
 	for {
-		m := cp.LeftOpenDate
+		var m time.Time
+		if direction == CrawlDirectionBackward {
+			m = cp.LeftOpenDate
+		} else {
+			m = cp.RightCloseDate
+		}
+
 		var date string
 		switch s.interval {
 		case INTERVAL_MONTHLY:
@@ -231,7 +248,6 @@ func (s *BinanceSpider) consumeJob(job string) {
 		//https://data.binance.vision/data/spot/daily/klines/1INCHBTC/5m/1INCHBTC-5m-2023-07-27.zip
 		//https://data.binance.vision/data/futures/um/daily/metrics/APTUSDT/APTUSDT-metrics-2023-07-28.zip
 		//https://data.binance.vision/data/futures/um/monthly/fundingRate/ATOMUSDT/ATOMUSDT-fundingRate-2023-06.zip
-
 		//https://data.binance.vision/data/futures/um/monthly/metrics/XVGUSDT/XVGUSDT-metrics-2023-06.zip
 		switch s.metric {
 		case METRIC_KLINES:
@@ -268,19 +284,30 @@ func (s *BinanceSpider) consumeJob(job string) {
 		if notFound {
 			log.Warnf("file %s not found", url)
 
-			cp.LeftProbed = true
-			s.kvStore.Set(pair, cp)
+			if direction == CrawlDirectionBackward {
+				cp.LeftProbed = true
+				s.kvStore.Set(pair, cp)
+			}
 
 			break
 		}
 
 		log.Infof("downloaded file %s", url)
 
-		switch s.interval {
-		case INTERVAL_MONTHLY:
-			cp.LeftOpenDate = m.AddDate(0, -1, 0)
-		case INTERVAL_DAILY:
-			cp.LeftOpenDate = m.AddDate(0, 0, -1)
+		if direction == CrawlDirectionBackward {
+			switch s.interval {
+			case INTERVAL_MONTHLY:
+				cp.LeftOpenDate = m.AddDate(0, -1, 0)
+			case INTERVAL_DAILY:
+				cp.LeftOpenDate = m.AddDate(0, 0, -1)
+			}
+		} else {
+			switch s.interval {
+			case INTERVAL_MONTHLY:
+				cp.RightCloseDate = m.AddDate(0, 1, 0)
+			case INTERVAL_DAILY:
+				cp.RightCloseDate = m.AddDate(0, 0, 1)
+			}
 		}
 
 		s.kvStore.Set(pair, cp)
