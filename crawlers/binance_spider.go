@@ -188,6 +188,10 @@ func (s *BinanceSpider) ConsumerCallback(jobCh chan interface{}) {
 	}
 }
 
+func (s *BinanceSpider) EndCallback() {
+	log.Info("binance spider ended")
+}
+
 func (s *BinanceSpider) consumeJob(job string) {
 	client := &http.Client{Timeout: 30 * time.Second}
 

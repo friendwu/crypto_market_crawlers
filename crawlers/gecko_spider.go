@@ -37,8 +37,8 @@ type checkpoint struct {
 
 type taskStatus struct {
 	Batch int 
-	startTime time.Time	
-	endTime   time.Time
+	StartTime time.Time	
+	EndTime   time.Time
 
 	Status string // "doing", "done"
 }
@@ -108,14 +108,14 @@ func NewGeckoSpider(configFile string) *GeckoSpider {
 	if !found {
 		ts.Batch = 0
 		ts.Status = TASK_STATUS_DOING
-		ts.startTime = time.Now()
+		ts.StartTime = time.Now()
 	} 
 	
 	if ts.Status == TASK_STATUS_DONE {
 		ts.Batch = ts.Batch + 1
 		ts.Status = TASK_STATUS_DOING
-		ts.startTime = time.Now()
-		ts.endTime = time.Time{}
+		ts.StartTime = time.Now()
+		ts.EndTime = time.Time{}
 	}
 
 	err = statusKvStore.Set(TASK_STATUS_KEY, ts)
@@ -154,17 +154,6 @@ func (s *GeckoSpider) ProducerCallback(jobCh chan interface{}) {
 
 		jobCh <- coin
 	}
-
-	ts := &taskStatus{}
-	found, err := s.statusKvStore.Get(TASK_STATUS_KEY, ts)
-	if err != nil || !found {
-		log.Fatalf("failed to get task status, found: %v, %v", found, err)
-		return 
-	}
-
-	ts.Status = TASK_STATUS_DONE
-	ts.endTime = time.Now()
-	s.statusKvStore.Set(TASK_STATUS_KEY, ts)
 
 	log.Info("all coins sent")
 }
@@ -205,6 +194,21 @@ func (s *GeckoSpider) ConsumerCallback(jobCh chan interface{}) {
 
 		log.Infof("synced coin history of %v", coin)
 	}
+}
+
+func (s *GeckoSpider) EndCallback() {
+	ts := &taskStatus{}
+	found, err := s.statusKvStore.Get(TASK_STATUS_KEY, ts)
+	if err != nil || !found {
+		log.Fatalf("failed to get task status, found: %v, %v", found, err)
+		return 
+	}
+
+	ts.Status = TASK_STATUS_DONE
+	ts.EndTime = time.Now()
+	s.statusKvStore.Set(TASK_STATUS_KEY, ts)
+
+	log.Info("gateio spider ended")
 }
 
 func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem, 

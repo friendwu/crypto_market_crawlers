@@ -156,6 +156,10 @@ func (s *GateioSpider) ConsumerCallback(jobCh chan interface{}) {
 	}
 }
 
+func (s *GateioSpider) EndCallback() {
+	log.Info("gateio spider ended")
+}
+
 func (s *GateioSpider) consumeJob(pair string) {
 	client := &http.Client{Timeout: 30 * time.Second}
 

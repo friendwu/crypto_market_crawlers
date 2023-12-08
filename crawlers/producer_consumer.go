@@ -34,6 +34,8 @@ func (pc *ProducerConsumer) Run() {
 	}
 
 	pc.wg.Wait()
+
+	pc.spider.EndCallback()
 }
 
 func (pc *ProducerConsumer) producer() {

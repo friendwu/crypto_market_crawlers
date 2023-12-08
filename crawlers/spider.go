@@ -3,6 +3,7 @@ package main
 type Spider interface {
 	ProducerCallback(jobCh chan interface{})
 	ConsumerCallback(jobCh chan interface{})
+	EndCallback()
 }
 
 func NewSpider(name string, configFile string) Spider {
