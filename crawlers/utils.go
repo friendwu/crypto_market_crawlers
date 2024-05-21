@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/charmbracelet/log"
 	"github.com/philippgille/gokv"
@@ -24,6 +25,11 @@ func DownloadFile(client *http.Client, url, path string) (notFound bool, err err
 		notFound = true
 
 		return
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+		log.Fatalf("failed to create directory %s, %v", dir, err)
 	}
 
 	out, err := os.Create(path)
