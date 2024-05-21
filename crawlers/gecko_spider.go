@@ -76,10 +76,10 @@ type GeckoMarket struct {
 	GeckoId      string    `gorm:"column:gecko_id;primaryKey"`
 	Symbol       string    `gorm:"column:symbol"`
 	Name         string    `gorm:"column:name"`
-	Timestamp    int64     `gorm:"column:timestamp;primaryKey"`
-	DateTime     time.Time `gorm:"column:datetime"`
+	TimestampDeprecated    int64     `gorm:"column:timestamp_deprecated;primaryKey"`
+	Timestamp     time.Time `gorm:"column:timestamp"`
 	Price     float64   `gorm:"column:price"`
-	MarketCap float64   `gorm:"column:market_cap"`
+	MarketCap float64   `gorm:"column:marketcap"`
 	Volume24h float64   `gorm:"column:volume_24h"`
 }
 
@@ -176,8 +176,8 @@ func (s *GeckoSpider) ConsumerCallback(jobCh chan interface{}) {
 			continue //already synced
 		}
 
-		s.syncCoinHistory(coin, cgClient, "usd", "max")
-		s.syncCoinHistory(coin, cgClient, "btc", "max")
+		s.syncCoinHistory(coin, cgClient, "usd", "360")
+		//s.syncCoinHistory(coin, cgClient, "btc", "max")
 
 		//cp.LeftDate = time.Unix(int64((*(*coinMarkets).Prices)[0][0]/1000), 0)
 		//cp.RightDate = time.Unix(int64((*(*coinMarkets).Prices)[len(*(*coinMarkets).Prices)-1][0]/1000), 0)
@@ -248,8 +248,8 @@ func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem,
 				GeckoId:      coin.ID,
 				Symbol:       coin.Symbol,
 				Name:         coin.Name,
-				Timestamp:    int64((*(*coinMarkets).Prices)[i][0]),
-				DateTime:     time.Unix(int64((*(*coinMarkets).Prices)[i][0]/1000), 0),
+				TimestampDeprecated:    int64((*(*coinMarkets).Prices)[i][0]),
+				Timestamp:     time.Unix(int64((*(*coinMarkets).Prices)[i][0]/1000), 0),
 				Price:     float64((*(*coinMarkets).Prices)[i][1]),
 				MarketCap: float64((*(*coinMarkets).MarketCaps)[i][1]),
 				Volume24h: float64((*(*coinMarkets).TotalVolumes)[i][1]),
@@ -257,8 +257,8 @@ func (s *GeckoSpider) syncCoinHistory(coin coingecko_types.CoinsListItem,
 
 			// Upsert
 			result := s.db.Table(fmt.Sprintf("blockchain_overview.gecko_markets_%s", vs_currency)).Clauses(clause.OnConflict{
-				Columns:   []clause.Column{{Name: "gecko_id"}, {Name: "timestamp"}},                            // Use the "id" column to determine if a record exists
-				DoUpdates: clause.AssignmentColumns([]string{"price", "market_cap", "volume_24h"}), // If a record exists, update the "name" and "age_x" fields
+				Columns:   []clause.Column{{Name: "gecko_id"}, {Name: "timestamp_deprecated"}},                            // Use the "id" column to determine if a record exists
+				DoUpdates: clause.AssignmentColumns([]string{"price", "marketcap", "volume_24h"}), // If a record exists, update the "name" and "age_x" fields
 			}).Create(&item)
 
 			if result.Error != nil {
