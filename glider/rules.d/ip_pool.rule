@@ -1,0 +1,19 @@
+# Round Robin mode: rr
+# High Availability mode: ha
+strategy=rr
+
+# forwarder health check
+check=http://www.msftconnecttest.com/connecttest.txt#expect=200|204
+checkinterval=300
+
+include=dest.list
+
+# forwarder will be set to disabled on how many failures counted(both dial and relay).
+maxfailures=3
+
+# timeout for create a connection(seconds)
+dialtimeout=5
+
+domain=api.coingecko.com
+#domain=ip.tool.lu
+domain=www.binance.com
