@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	urllib "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,8 +86,8 @@ func NewBinanceSpider(configFile string) Spider {
 		config.Interval = INTERVAL_MONTHLY
 	}
 
-	dataPath := filepath.Join(config.DataRoot, config.Biz+"_"+config.Metric, config.Interval, config.Granularity)
-	kvstorePath := filepath.Join(dataPath, "gokv")
+	dataPath := filepath.Join(config.DataRoot, config.Biz+"_"+config.Metric, config.Interval)
+	kvstorePath := filepath.Join(dataPath, config.Granularity, "gokv")
 
 	if err := os.MkdirAll(dataPath, os.ModePerm); err != nil {
 		log.Fatalf("failed to create directory %s, %v", dataPath, err)
@@ -145,7 +146,8 @@ func (s *BinanceSpider) ProducerCallback(jobCh chan interface{}) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36")
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	proxyUrl, _ := urllib.Parse("http://127.0.0.1:8443")
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Error("failed to do request", err)
@@ -200,7 +202,8 @@ func (s *BinanceSpider) EndCallback() {
 }
 
 func (s *BinanceSpider) consumeJob(job string, direction string) {
-	client := &http.Client{Timeout: 30 * time.Second}
+	proxyUrl, _ := urllib.Parse("http://127.0.0.1:8443")
+	client := &http.Client{Timeout: 30 * time.Second, Transport: &http.Transport{Proxy: http.ProxyURL(proxyUrl)}}
 
 	log.Infof("start to execute job %s:%s", job, direction)
 
@@ -255,7 +258,7 @@ func (s *BinanceSpider) consumeJob(job string, direction string) {
 		default:
 			fileName = fmt.Sprintf("%s-%s-%s.zip", pair, s.metric, date)
 		}
-		path := filepath.Join(s.dataPath, fileName)
+		path := filepath.Join(s.dataPath, pair, s.granularity, fileName)
 
 		//hardcode url component futures_um --> futures/um
 		biz := s.biz
@@ -292,7 +295,7 @@ func (s *BinanceSpider) consumeJob(job string, direction string) {
 			break
 		}
 
-		log.Infof("downloaded file %s", url)
+		log.Infof("downloaded file %s to %s", url, path)
 
 		if direction == CrawlDirectionBackward {
 			switch s.interval {
