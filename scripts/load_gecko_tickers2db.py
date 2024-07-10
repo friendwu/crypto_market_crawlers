@@ -24,7 +24,6 @@ engine = create_engine(
 
 
 def _load_tickers_df():
-
     proxies = {
         "http": "http://127.0.0.1:8443",
         "https": "http://127.0.0.1:8443",
@@ -93,7 +92,6 @@ table = Table(
 
 # 创建表格(如果不存在)
 metadata.create_all(engine)
-
 
 with engine.connect() as con:
     df.to_sql(
