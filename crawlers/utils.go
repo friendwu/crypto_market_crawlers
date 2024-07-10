@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"io/ioutil"
+	"errors"
 
 	"github.com/charmbracelet/log"
 	"github.com/philippgille/gokv"
@@ -25,6 +27,15 @@ func DownloadFile(client *http.Client, url, path string) (notFound bool, err err
 		notFound = true
 
 		return
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return notFound, err
+		}
+		err = errors.New(string(body))
+		return notFound, err
 	}
 
 	dir := filepath.Dir(path)
